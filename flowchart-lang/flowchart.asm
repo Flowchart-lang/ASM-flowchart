@@ -1,93 +1,175 @@
-; ASM-flowchart.nasm
-; A more complex A-FCL interpreter in NASM assembly language for a 64-bit Linux system.
-; This example demonstrates how to implement the 'SET' and 'PRINT' commands
-; and how to manage a variable in memory.
-;
-; It interprets the following hard-coded A-FCL program:
-; START
-;   SET myvar = "Hello, A-FCL!"
-;   PRINT myvar
-; END
-;
-; To compile and run:
-; nasm -f elf64 ASM-flowchart.nasm -o ASM-flowchart.o
-; ld ASM-flowchart.o -o ASM-flowchart
-; ./ASM-flowchart
+; Assembly-style pseudo-code version of the Python flowchart interpreter.
+; Renamed as ASM-flowchart
 
-section .data
-    ; The A-FCL program string. For this example, we'll "parse" it by
-    ; hard-coding the execution flow.
-    a_fcl_program db "START SET myvar = \"Hello, A-FCL!\" PRINT myvar END", 0
-    
-    ; The string literal value to be assigned to the variable.
-    string_value db "Hello, A-FCL!", 0
-    string_len equ $ - string_value
-    
-    ; Memory location to hold the value of the variable "myvar".
-    ; We allocate enough space for our string and a null terminator.
-    myvar_storage resb 20
+SECTION .data
+    variables:       ; Dictionary to hold variables
+    program_lines:   ; List of program lines
+    current_line_index: 0
+    loop_stack:      ; Stack for loop start indexes
+    execution_stack: ; Stack for condition execution flags
+    commands_table:  ; Dictionary of built-in commands
 
-section .text
-    global _start
+SECTION .text
 
-_start:
-    ; --- Execution Flow Simulation ---
-    ; In a real interpreter, we would read the program line by line and
-    ; jump to the appropriate command's code. Here, we'll simulate that
-    ; by jumping directly to the 'SET' command, then 'PRINT', then 'END'.
-    jmp set_command
+START:
+    ; Entry point: Parse CLI arguments
+    CMP argc, 3
+    JL usage_error
+    CMP argv[1], "-r"
+    JE set_run_mode
+    CMP argv[1], "-s"
+    JE set_step_mode
+    JMP usage_error
 
-set_command:
-    ; The 'SET' command logic: copy the string literal into the variable storage.
-    ; For simplicity, we assume the variable name is 'myvar' and the value is
-    ; 'string_value'.
+set_run_mode:
+    MOV step_by_step, 0
+    JMP load_file
 
-    mov rsi, string_value   ; Source address (the string literal)
-    mov rdi, myvar_storage  ; Destination address (the variable's storage)
-    mov rcx, string_len     ; Count of bytes to copy
-    
-    ; We use the REP MOVSB instruction to copy a block of bytes.
-    ; This is a fast way to copy memory in assembly.
-    cld                     ; Clear direction flag for forward copy
-    rep movsb               ; Repeat MOVSB (Move String Byte) RCX times
+set_step_mode:
+    MOV step_by_step, 1
+    JMP load_file
 
-    ; The variable 'myvar' now holds the value "Hello, A-FCL!".
-    jmp print_command
+usage_error:
+    PRINT "Usage: ASM-flowchart -r <file.fcl> or ASM-flowchart -s <file.fcl>"
+    EXIT 1
 
-print_command:
-    ; The 'PRINT' command logic: print the contents of the variable 'myvar'.
+; -------------------
+; Load Program File
+; -------------------
+load_file:
+    CALL file_exists, argv[2]
+    CMP eax, 0
+    JE file_not_found
+    CALL read_file_lines, argv[2]
+    FILTER remove_comments_and_empty
+    CMP first_line, "START"
+    JNE error_start_missing
+    CMP last_line, "END"
+    JNE error_end_missing
+    JMP execute_program
 
-    ; sys_write syscall
-    ; RAX: syscall number 1 (for write)
-    ; RDI: file descriptor 1 (for stdout)
-    ; RSI: pointer to the string to be written (the variable's value)
-    ; RDX: length of the string
-    
-    mov rax, 1              ; syscall number for sys_write
-    mov rdi, 1              ; file descriptor 1 (stdout)
-    mov rsi, myvar_storage  ; address of our variable's value
-    mov rdx, string_len     ; length of the string to print
-    syscall                 ; Execute the system call
+file_not_found:
+    PRINT "Error: File not found"
+    EXIT 1
 
-    ; Add a newline character to make the output clean.
-    mov rsi, newline_char
-    mov rdx, 1
-    mov rax, 1
-    mov rdi, 1
-    syscall
+error_start_missing:
+    PRINT "Error: Program must begin with START"
+    EXIT 1
 
-    jmp end_command
+error_end_missing:
+    PRINT "Error: Program must end with END"
+    EXIT 1
 
-end_command:
-    ; The 'END' command logic: exit the program.
-    ; sys_exit syscall
-    ; RAX: syscall number 60 (for exit)
-    ; RDI: exit status 0 (for success)
+; -------------------
+; Execution Loop
+; -------------------
+execute_program:
+    PUSH execution_stack, 1  ; True initially
+    MOV current_line_index, 0
 
-    mov rax, 60             ; syscall number for sys_exit
-    mov rdi, 0              ; exit status 0 (success)
-    syscall                 ; Execute the system call
+exec_loop:
+    CMP current_line_index, program_lines.length
+    JGE program_done
 
-    section .data
-    newline_char db 10
+    MOV line, program_lines[current_line_index]
+    SPLIT line INTO command, args
 
+    CMP step_by_step, 1
+    JNE skip_step_pause
+    PRINT "[STEP] ", current_line_index+1, ": ", line
+    CALL wait_for_enter
+skip_step_pause:
+
+    CMP TOP(execution_stack), 1
+    JE exec_command
+    CALL handle_skipped_line, command
+    JMP next_line
+
+exec_command:
+    LOOKUP commands_table, command
+    JZ unknown_command
+    CALL command_func, args
+    JMP next_line
+
+unknown_command:
+    PRINT "Error: Unknown command"
+    EXIT 1
+
+next_line:
+    INC current_line_index
+    JMP exec_loop
+
+program_done:
+    EXIT 0
+
+; -------------------
+; Command Implementations
+; -------------------
+command_START:
+    RET
+
+command_END:
+    PRINT "[SYSTEM] Program finished."
+    MOV current_line_index, program_lines.length
+    RET
+
+command_PRINT:
+    PARSE args INTO parts (split by '+', ignoring strings)
+    RESOLVE all parts to values
+    PRINT concatenated result
+    RET
+
+command_SET:
+    SPLIT args at '=' INTO var_name, value_expr
+    RESOLVE value_expr to value
+    STORE variables[var_name], value
+    RET
+
+command_INPUT:
+    GET user_input
+    STORE variables[args], user_input
+    RET
+
+command_INCREMENT:
+    LOAD var_name from args
+    ADD variables[var_name], 1
+    RET
+
+command_IF:
+    EVAL condition(args) INTO condition_met
+    PUSH execution_stack, condition_met
+    CMP condition_met, 0
+    JE jump_to_ENDIF
+    RET
+
+command_ELSE:
+    POP execution_stack
+    PUSH execution_stack, 0
+    CALL jump_to_ENDIF
+    RET
+
+command_ENDIF:
+    POP execution_stack
+    RET
+
+command_WHILE:
+    EVAL condition(args) INTO condition_met
+    CMP condition_met, 1
+    JE store_loop_start
+    CALL jump_to_ENDWHILE
+    RET
+store_loop_start:
+    PUSH loop_stack, current_line_index
+    RET
+
+command_ENDWHILE:
+    POP loop_start FROM loop_stack
+    MOV current_line_index, loop_start-1
+    RET
+
+command_IMPORT:
+    RET  ; No runtime effect
+
+; -------------------
+; End of ASM-flowchart
+; -------------------
