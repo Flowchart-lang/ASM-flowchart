@@ -1,4 +1,4 @@
-# ASM-Flowchart (NASM x86\_64 Linux Edition)
+# ASM-Flowchart (NASM x86\_64 Linux Edition) : V0.1.0
 
 **ASM-Flowchart** is a minimalistic, assembly-language implementation of the Flowchart-Lang (FCL) concept. This version runs on Linux using the NASM assembler for x86\_64 architecture. It interprets a small subset of the FCL language directly in low-level assembly.
 
