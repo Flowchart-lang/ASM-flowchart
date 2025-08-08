@@ -1,4 +1,4 @@
-; asm_flowchart.asm
+; flowchart.asm
 ; Minimal Flowchart interpreter in NASM x86_64 Linux
 ; Supports START/END, SET var = "string" or number, PRINT "literal" or var
 ; Build:
